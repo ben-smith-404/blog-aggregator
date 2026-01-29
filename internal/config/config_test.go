@@ -50,8 +50,13 @@ func TestSetUserConfig(t *testing.T) {
 		},
 	})
 
+	config, err := Read()
+	if err != nil {
+		t.Error(err)
+	}
+
 	for _, test := range tests {
-		err := SetUser(test.userName)
+		err := config.SetUser(test.userName)
 		if err != nil {
 			t.Error(err)
 		}
