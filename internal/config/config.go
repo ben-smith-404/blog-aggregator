@@ -5,13 +5,18 @@ import (
 	"os"
 )
 
+// the config struct represents the structure of a json file stored in the users home directory
 type Config struct {
 	DbURL           string `json:"db_url"`
 	CurrentUserName string `json:"current_user_name"`
 }
 
+// the name of the conifg file
 const configFileName = ".gatorconfig.json"
 
+// a public function allowing the config file to be read. Note that there is no logic to create
+// the file if it does not exist yet. If the file does not exit, this will always throw an error,
+// if the file does exist, a populated Config struct will be returned
 func Read() (Config, error) {
 	var config Config
 	filePath, err := getConfigFilePath()
@@ -29,6 +34,7 @@ func Read() (Config, error) {
 	return config, nil
 }
 
+// a public function to set the username in the config file
 func (config Config) SetUser(userName string) error {
 	config.CurrentUserName = userName
 	err := write(config)
@@ -38,6 +44,7 @@ func (config Config) SetUser(userName string) error {
 	return nil
 }
 
+// private function allowing a new config to be written to the original file
 func write(config Config) error {
 	jsonData, err := json.Marshal(config)
 	if err != nil {
@@ -54,6 +61,7 @@ func write(config Config) error {
 	return nil
 }
 
+// a private function tat returns the file path of the file
 func getConfigFilePath() (string, error) {
 	path, err := os.UserHomeDir()
 	if err != nil {

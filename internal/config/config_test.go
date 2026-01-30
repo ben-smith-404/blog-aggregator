@@ -17,7 +17,7 @@ func TestReadConfig(t *testing.T) {
 	test := testConfigStruct{
 		testName: "basic read",
 		expect: Config{
-			DbURL: "postgres://example",
+			DbURL: "postgres://postgres:postgres@localhost:5432/gator?sslmode=disable",
 		},
 	}
 
@@ -37,7 +37,7 @@ func TestSetUserConfig(t *testing.T) {
 		testName: "basic write",
 		userName: "Robin Hood",
 		expect: Config{
-			DbURL:           "postgres://example",
+			DbURL:           "postgres://postgres:postgres@localhost:5432/gator?sslmode=disable",
 			CurrentUserName: "Robin Hood",
 		},
 	})
@@ -45,7 +45,7 @@ func TestSetUserConfig(t *testing.T) {
 		testName: "follow-up write",
 		userName: "Friar Tuck",
 		expect: Config{
-			DbURL:           "postgres://example",
+			DbURL:           "postgres://postgres:postgres@localhost:5432/gator?sslmode=disable",
 			CurrentUserName: "Friar Tuck",
 		},
 	})
