@@ -7,6 +7,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -53,4 +54,50 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 		&i.UserID,
 	)
 	return i, err
+}
+
+const getFeedsAndUserName = `-- name: GetFeedsAndUserName :many
+SELECT f.id, f.created_at, f.updated_at, f.name, f.url, f.user_id, u.name as user_name FROM feeds f 
+LEFT JOIN users u ON f.user_id = u.id
+`
+
+type GetFeedsAndUserNameRow struct {
+	ID        uuid.UUID
+	CreatedAt time.Time
+	UpdatedAt time.Time
+	Name      string
+	Url       string
+	UserID    uuid.UUID
+	UserName  sql.NullString
+}
+
+func (q *Queries) GetFeedsAndUserName(ctx context.Context) ([]GetFeedsAndUserNameRow, error) {
+	rows, err := q.db.QueryContext(ctx, getFeedsAndUserName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetFeedsAndUserNameRow
+	for rows.Next() {
+		var i GetFeedsAndUserNameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Name,
+			&i.Url,
+			&i.UserID,
+			&i.UserName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

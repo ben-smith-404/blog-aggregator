@@ -36,8 +36,7 @@ func main() {
 	if len(inputs) < 2 {
 		checkError(fmt.Errorf("Error: not enough arguments were provided"))
 	}
-	currentCommand := command{name: inputs[1], arguments: inputs[2:]}
-	err = commands.run(&currentState, currentCommand)
+	err = commands.run(&currentState, command{name: inputs[1], arguments: inputs[2:]})
 	checkError((err))
 }
 

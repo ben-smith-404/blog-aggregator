@@ -49,6 +49,7 @@ func registerCommands() commands {
 	commands.register("users", handlerUsers)
 	commands.register("agg", handlerAgg)
 	commands.register("addfeed", handlerAddFeed)
+	commands.register("feeds", handlerFeeds)
 	return commands
 }
 
@@ -156,5 +157,17 @@ func handlerAddFeed(s *state, cmd command) error {
 		UserID:    currentUser.ID,
 	})
 	fmt.Println(dbFeed)
+	return nil
+}
+
+// prints a list of feeds, including the name of the user who created the feed
+func handlerFeeds(s *state, cmd command) error {
+	feeds, err := s.db.GetFeedsAndUserName(context.Background())
+	if err != nil {
+		return err
+	}
+	for _, feed := range feeds {
+		fmt.Printf("Feed: %v with URL: %v was created by: %v\n", feed.Name, feed.Url, feed.UserName.String)
+	}
 	return nil
 }
