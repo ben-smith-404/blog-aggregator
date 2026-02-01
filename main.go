@@ -22,29 +22,27 @@ func main() {
 	var currentState state
 
 	myConfig, err := config.Read()
-	if err != nil {
-		fmt.Printf("Error: %v/n", err)
-		os.Exit(1)
-	}
+	checkError(err)
 
 	currentState.cfg = &myConfig
 
 	db, err := sql.Open("postgres", currentState.cfg.DbURL)
-	if err != nil {
-		fmt.Printf("Error: %v/n", err)
-		os.Exit(1)
-	}
+	checkError(err)
 
 	currentState.db = database.New(db)
 	commands := registerCommands()
 
 	inputs := os.Args
 	if len(inputs) < 2 {
-		fmt.Println("Error: not enough arguments were provided")
-		os.Exit(1)
+		checkError(fmt.Errorf("Error: not enough arguments were provided"))
 	}
 	currentCommand := command{name: inputs[1], arguments: inputs[2:]}
 	err = commands.run(&currentState, currentCommand)
+	checkError((err))
+}
+
+// got sick of writing the error check every time
+func checkError(err error) {
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		os.Exit(1)

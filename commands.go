@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -43,11 +42,13 @@ func (c *commands) register(name string, f func(*state, command) error) {
 }
 
 func registerCommands() commands {
-	var commands commands = commands{command: make(map[string]func(*state, command) error)}
+	commands := commands{command: make(map[string]func(*state, command) error)}
 	commands.register("login", handlerLogin)
 	commands.register("register", handlerRegister)
 	commands.register("reset", handlerReset)
 	commands.register("users", handlerUsers)
+	commands.register("agg", handlerAgg)
+	commands.register("addfeed", handlerAddFeed)
 	return commands
 }
 
@@ -58,14 +59,11 @@ func handlerLogin(s *state, cmd command) error {
 	if len(cmd.arguments) != 1 {
 		return fmt.Errorf("login requires one username, %v were provided", len(cmd.arguments))
 	}
-	user, err := s.db.GetUser(context.Background(), sql.NullString{
-		String: cmd.arguments[0],
-		Valid:  true,
-	})
+	user, err := s.db.GetUser(context.Background(), cmd.arguments[0])
 	if err != nil {
 		return err
 	}
-	err = s.cfg.SetUser(user.Name.String)
+	err = s.cfg.SetUser(user.Name)
 	if err != nil {
 		return err
 	}
@@ -88,19 +86,16 @@ func handlerRegister(s *state, cmd command) error {
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
-		Name: sql.NullString{
-			String: cmd.arguments[0],
-			Valid:  true,
-		},
+		Name:      cmd.arguments[0],
 	})
 	if err != nil {
 		return err
 	}
-	err = s.cfg.SetUser(user.Name.String)
+	err = s.cfg.SetUser(user.Name)
 	if err != nil {
 		return err
 	}
-	fmt.Printf("User: %v created with ID: %v with dates: %v\n", user.Name.String, user.ID, user.CreatedAt)
+	fmt.Printf("User: %v created with ID: %v with dates: %v\n", user.Name, user.ID, user.CreatedAt)
 	return nil
 }
 
@@ -122,11 +117,44 @@ func handlerUsers(s *state, cmd command) error {
 		return err
 	}
 	for _, user := range users {
-		if user.Name.String == s.cfg.CurrentUserName {
-			fmt.Println("* " + user.Name.String + " (current)")
+		if user.Name == s.cfg.CurrentUserName {
+			fmt.Println("* " + user.Name + " (current)")
 		} else {
-			fmt.Println("* " + user.Name.String)
+			fmt.Println("* " + user.Name)
 		}
 	}
+	return nil
+}
+
+// placeholder function to test the aggregate function
+func handlerAgg(s *state, cmd command) error {
+	url := "https://www.wagslane.dev/index.xml"
+	feed, err := fetchFeed(context.Background(), url)
+	if err != nil {
+		return err
+	}
+	fmt.Println(*feed)
+	return nil
+}
+
+// add a feed to the database with a name, URL, and as the logged in user. It requres 2 parameters to be
+// passed in, name and URL
+func handlerAddFeed(s *state, cmd command) error {
+	if len(cmd.arguments) != 2 {
+		return fmt.Errorf("2 arguments expected, %v provided", len(cmd.arguments))
+	}
+	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+	if err != nil {
+		return err
+	}
+	dbFeed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
+		ID:        uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Name:      cmd.arguments[0],
+		Url:       cmd.arguments[1],
+		UserID:    currentUser.ID,
+	})
+	fmt.Println(dbFeed)
 	return nil
 }

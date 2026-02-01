@@ -7,7 +7,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -28,7 +27,7 @@ type CreateUserParams struct {
 	ID        uuid.UUID
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	Name      sql.NullString
+	Name      string
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -84,7 +83,7 @@ const getUser = `-- name: GetUser :one
 SELECT id, created_at, updated_at, name FROM users WHERE name = $1
 `
 
-func (q *Queries) GetUser(ctx context.Context, name sql.NullString) (User, error) {
+func (q *Queries) GetUser(ctx context.Context, name string) (User, error) {
 	row := q.db.QueryRowContext(ctx, getUser, name)
 	var i User
 	err := row.Scan(
@@ -97,7 +96,7 @@ func (q *Queries) GetUser(ctx context.Context, name sql.NullString) (User, error
 }
 
 const resetUsers = `-- name: ResetUsers :exec
-TRUNCATE TABLE users
+TRUNCATE TABLE users CASCADE
 `
 
 func (q *Queries) ResetUsers(ctx context.Context) error {
