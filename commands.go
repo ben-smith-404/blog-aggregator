@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/ben-smith-404/blog-aggregator/internal/config"
@@ -27,12 +28,10 @@ type commands struct {
 func (c *commands) run(s *state, cmd command) error {
 	handler, exists := c.command[cmd.name]
 	if !exists {
-		return fmt.Errorf("there is no registered command with the name %v", cmd.name)
+		checkError(fmt.Errorf("there is no registered command called %v", cmd.name))
 	}
 	err := handler(s, cmd)
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	return nil
 }
 
@@ -54,6 +53,7 @@ func registerCommands() commands {
 	commands.register("follow", middlewareLoggedIn(handlerFollow))
 	commands.register("following", middlewareLoggedIn(handlerFollowing))
 	commands.register("unfollow", middlewareLoggedIn(handleUnfollow))
+	commands.register("browse", middlewareLoggedIn(handleBrowse))
 	return commands
 }
 
@@ -62,20 +62,14 @@ func registerCommands() commands {
 // value of that string using the config in the state variable
 func handlerLogin(s *state, cmd command) error {
 	if len(cmd.arguments) != 1 {
-		return fmt.Errorf("login requires one username, %v were provided", len(cmd.arguments))
+		checkError(fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments)))
 	}
 	user, err := s.db.GetUser(context.Background(), cmd.arguments[0])
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	err = s.cfg.SetUser(user.Name)
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	*s.cfg, err = config.Read()
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	fmt.Printf("%v has been set as the current logged in user\n", s.cfg.CurrentUserName)
 	return nil
 }
@@ -85,7 +79,7 @@ func handlerLogin(s *state, cmd command) error {
 // current user in the config file. It will print a message when it's successful
 func handlerRegister(s *state, cmd command) error {
 	if len(cmd.arguments) != 1 {
-		return fmt.Errorf("register requires one name, %v were provided", len(cmd.arguments))
+		checkError(fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments)))
 	}
 	user, err := s.db.CreateUser(context.Background(), database.CreateUserParams{
 		ID:        uuid.New(),
@@ -93,13 +87,9 @@ func handlerRegister(s *state, cmd command) error {
 		UpdatedAt: time.Now(),
 		Name:      cmd.arguments[0],
 	})
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	err = s.cfg.SetUser(user.Name)
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	fmt.Printf("User: %v created with ID: %v with dates: %v\n", user.Name, user.ID, user.CreatedAt)
 	return nil
 }
@@ -107,9 +97,7 @@ func handlerRegister(s *state, cmd command) error {
 // a very dangerous command to make testing easier. Reset truncates the user table in the database
 func handlerReset(s *state, cmd command) error {
 	err := s.db.ResetUsers(context.Background())
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	fmt.Println("The users database table was reset")
 	return nil
 }
@@ -118,9 +106,7 @@ func handlerReset(s *state, cmd command) error {
 // * user name
 func handlerUsers(s *state, cmd command) error {
 	users, err := s.db.GetAllUsers(context.Background())
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	for _, user := range users {
 		if user.Name == s.cfg.CurrentUserName {
 			fmt.Println("* " + user.Name + " (current)")
@@ -137,12 +123,10 @@ func handlerUsers(s *state, cmd command) error {
 // are then converted to a duration. To prevent accidantal DOS, durations less than 1 second are not allowed
 func handlerAgg(s *state, cmd command) error {
 	if len(cmd.arguments) != 1 {
-		return fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments))
+		checkError(fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments)))
 	}
 	timeBetweenRequests, err := time.ParseDuration(cmd.arguments[0])
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	if timeBetweenRequests < time.Second {
 		return fmt.Errorf("the duration must be at least 1 second to prevent unintentional denial of service\n")
 	}
@@ -156,7 +140,7 @@ func handlerAgg(s *state, cmd command) error {
 // passed in, name and URL. It also creates a record that the logged in user is following a feed
 func handlerAddFeed(s *state, cmd command, currentUser database.User) error {
 	if len(cmd.arguments) != 2 {
-		return fmt.Errorf("2 arguments expected, %v provided", len(cmd.arguments))
+		checkError(fmt.Errorf("2 arguments expected, %v provided", len(cmd.arguments)))
 	}
 	dbFeed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
 		ID:        uuid.New(),
@@ -166,9 +150,7 @@ func handlerAddFeed(s *state, cmd command, currentUser database.User) error {
 		Url:       cmd.arguments[1],
 		UserID:    currentUser.ID,
 	})
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	_, err = s.db.CreateFeedFollower(context.Background(), database.CreateFeedFollowerParams{
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
@@ -176,9 +158,7 @@ func handlerAddFeed(s *state, cmd command, currentUser database.User) error {
 		UserID:    currentUser.ID,
 		FeedID:    dbFeed.ID,
 	})
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	fmt.Printf("New feed %v added. Followed by %v\n", dbFeed.Name, currentUser.Name)
 	return nil
 }
@@ -186,9 +166,7 @@ func handlerAddFeed(s *state, cmd command, currentUser database.User) error {
 // prints a list of feeds and the name of the user who created each feed
 func handlerFeeds(s *state, cmd command) error {
 	feeds, err := s.db.GetFeedsAndUserName(context.Background())
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	for _, feed := range feeds {
 		fmt.Printf("Feed: %v with URL: %v was created by: %v\n", feed.Name, feed.Url, feed.UserName)
 	}
@@ -202,9 +180,7 @@ func handlerFollow(s *state, cmd command, currentUser database.User) error {
 		return fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments))
 	}
 	feed, err := s.db.GetFeedsByURL(context.Background(), cmd.arguments[0])
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	feedFollower, err := s.db.CreateFeedFollower(context.Background(), database.CreateFeedFollowerParams{
 		ID:        uuid.New(),
 		CreatedAt: time.Now(),
@@ -219,9 +195,7 @@ func handlerFollow(s *state, cmd command, currentUser database.User) error {
 // this command prints a list of all the feeds the user is currently following
 func handlerFollowing(s *state, cmd command, currentUser database.User) error {
 	feeds, err := s.db.GetFeedsUserFollows(context.Background(), currentUser.ID)
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	for _, feed := range feeds {
 		fmt.Println(feed.FeedName)
 	}
@@ -234,15 +208,35 @@ func handleUnfollow(s *state, cmd command, currentUser database.User) error {
 		return fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments))
 	}
 	feed, err := s.db.GetFeedsByURL(context.Background(), cmd.arguments[0])
-	if err != nil {
-		return err
-	}
+	checkError(err)
 	err = s.db.DeleteFollowedFeed(context.Background(), database.DeleteFollowedFeedParams{
 		UserID: currentUser.ID,
 		FeedID: feed.ID,
 	})
-	if err != nil {
-		return err
+	checkError(err)
+	return nil
+}
+
+// This command displays the subscribed feed to the user
+func handleBrowse(s *state, cmd command, currentUser database.User) error {
+	if len(cmd.arguments) > 1 {
+		checkError(fmt.Errorf("no more than 1 argument expected, %v provided", len(cmd.arguments)))
+	}
+	var err error
+	var limit int
+	if len(cmd.arguments) == 1 {
+		limit, err = strconv.Atoi(cmd.arguments[0])
+		checkError(err)
+	} else {
+		limit = 2
+	}
+	posts, err := s.db.GetPostsForUser(context.Background(), database.GetPostsForUserParams{
+		UserID: currentUser.ID,
+		Limit:  int32(limit),
+	})
+	checkError(err)
+	for _, post := range posts {
+		fmt.Println(post.Title)
 	}
 	return nil
 }
@@ -252,9 +246,7 @@ func handleUnfollow(s *state, cmd command, currentUser database.User) error {
 func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
 	return func(s *state, c command) error {
 		currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-		if err != nil {
-			return err
-		}
+		checkError(err)
 		return handler(s, c, currentUser)
 	}
 }

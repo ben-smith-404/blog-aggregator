@@ -3,10 +3,13 @@ package main
 import (
 	"context"
 	"encoding/xml"
-	"fmt"
 	"html"
 	"io"
 	"net/http"
+	"time"
+
+	"github.com/ben-smith-404/blog-aggregator/internal/database"
+	"github.com/google/uuid"
 )
 
 type RSSFeed struct {
@@ -29,23 +32,15 @@ type RSSItem struct {
 func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	client := &http.Client{}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
-	if err != nil {
-		return nil, err
-	}
+	checkError(err)
 	request.Header.Set("User-Agent", "gator")
 	response, err := client.Do(request)
-	if err != nil {
-		return nil, err
-	}
+	checkError(err)
 	body, err := io.ReadAll(response.Body)
-	if err != nil {
-		return nil, err
-	}
+	checkError(err)
 	var feed RSSFeed
 	err = xml.Unmarshal(body, &feed)
-	if err != nil {
-		return nil, err
-	}
+	checkError(err)
 	feed.Channel.Title = html.UnescapeString(feed.Channel.Title)
 	feed.Channel.Description = html.UnescapeString(feed.Channel.Description)
 
@@ -58,7 +53,7 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 }
 
 // the almighty feed scraper. Gets the oldest feed in the db, retrieves the feed info using fetchFeed()
-// and prints the feed titles to the console
+// and saves them to the database in the posts table
 func scrapeFeeds(s *state) {
 	feed, err := s.db.GetNextFeedToFetch(context.Background())
 	checkError(err)
@@ -67,6 +62,15 @@ func scrapeFeeds(s *state) {
 	rssFeed, err := fetchFeed(context.Background(), feed.Url)
 	checkError(err)
 	for _, rssItem := range rssFeed.Channel.Item {
-		fmt.Println(rssItem.Title)
+		pubDate, _ := time.Parse(time.RFC1123Z, rssItem.PubDate)
+		err = s.db.CreatePost(context.Background(), database.CreatePostParams{
+			ID:          uuid.New(),
+			CreatedAt:   time.Now(),
+			UpdatedAt:   time.Now(),
+			Title:       rssItem.Title,
+			Url:         rssItem.Link,
+			PublishedAt: pubDate,
+			FeedID:      feed.ID,
+		})
 	}
 }
