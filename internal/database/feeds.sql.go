@@ -7,7 +7,6 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,7 +57,7 @@ func (q *Queries) CreateFeed(ctx context.Context, arg CreateFeedParams) (Feed, e
 
 const getFeedsAndUserName = `-- name: GetFeedsAndUserName :many
 SELECT f.id, f.created_at, f.updated_at, f.name, f.url, f.user_id, u.name as user_name FROM feeds f 
-LEFT JOIN users u ON f.user_id = u.id
+INNER JOIN users u ON f.user_id = u.id
 `
 
 type GetFeedsAndUserNameRow struct {
@@ -68,7 +67,7 @@ type GetFeedsAndUserNameRow struct {
 	Name      string
 	Url       string
 	UserID    uuid.UUID
-	UserName  sql.NullString
+	UserName  string
 }
 
 func (q *Queries) GetFeedsAndUserName(ctx context.Context) ([]GetFeedsAndUserNameRow, error) {
@@ -100,4 +99,23 @@ func (q *Queries) GetFeedsAndUserName(ctx context.Context) ([]GetFeedsAndUserNam
 		return nil, err
 	}
 	return items, nil
+}
+
+const getFeedsByURL = `-- name: GetFeedsByURL :one
+SELECT id, created_at, updated_at, name, url, user_id FROM feeds
+WHERE url = $1
+`
+
+func (q *Queries) GetFeedsByURL(ctx context.Context, url string) (Feed, error) {
+	row := q.db.QueryRowContext(ctx, getFeedsByURL, url)
+	var i Feed
+	err := row.Scan(
+		&i.ID,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Name,
+		&i.Url,
+		&i.UserID,
+	)
+	return i, err
 }
