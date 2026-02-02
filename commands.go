@@ -41,6 +41,7 @@ func (c *commands) register(name string, f func(*state, command) error) {
 	c.command[name] = f
 }
 
+// Register all the commands we'll need
 func registerCommands() commands {
 	commands := commands{command: make(map[string]func(*state, command) error)}
 	commands.register("login", handlerLogin)
@@ -48,10 +49,11 @@ func registerCommands() commands {
 	commands.register("reset", handlerReset)
 	commands.register("users", handlerUsers)
 	commands.register("agg", handlerAgg)
-	commands.register("addfeed", handlerAddFeed)
+	commands.register("addfeed", middlewareLoggedIn(handlerAddFeed))
 	commands.register("feeds", handlerFeeds)
-	commands.register("follow", handlerFollow)
-	commands.register("following", handlerFollowing)
+	commands.register("follow", middlewareLoggedIn(handlerFollow))
+	commands.register("following", middlewareLoggedIn(handlerFollowing))
+	commands.register("unfollow", middlewareLoggedIn(handleUnfollow))
 	return commands
 }
 
@@ -129,26 +131,32 @@ func handlerUsers(s *state, cmd command) error {
 	return nil
 }
 
-// placeholder function to test the aggregate function
+// The aggregate function is designed to be started and left running in a separate terminal. It will fetch
+// one site at a time from the database using the scrapeFeeds function in rss.go. It has one parameter that
+// represents the time between requests. This is expected to be in the format "1s", "5s", "1h", etc. These
+// are then converted to a duration. To prevent accidantal DOS, durations less than 1 second are not allowed
 func handlerAgg(s *state, cmd command) error {
-	url := "https://www.wagslane.dev/index.xml"
-	feed, err := fetchFeed(context.Background(), url)
+	if len(cmd.arguments) != 1 {
+		return fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments))
+	}
+	timeBetweenRequests, err := time.ParseDuration(cmd.arguments[0])
 	if err != nil {
 		return err
 	}
-	fmt.Println(*feed)
-	return nil
+	if timeBetweenRequests < time.Second {
+		return fmt.Errorf("the duration must be at least 1 second to prevent unintentional denial of service\n")
+	}
+	ticker := time.NewTicker(timeBetweenRequests)
+	for ; ; <-ticker.C {
+		scrapeFeeds(s)
+	}
 }
 
 // add a feed to the database with a name, URL, and as the logged in user. It requres 2 parameters to be
 // passed in, name and URL. It also creates a record that the logged in user is following a feed
-func handlerAddFeed(s *state, cmd command) error {
+func handlerAddFeed(s *state, cmd command, currentUser database.User) error {
 	if len(cmd.arguments) != 2 {
 		return fmt.Errorf("2 arguments expected, %v provided", len(cmd.arguments))
-	}
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-	if err != nil {
-		return err
 	}
 	dbFeed, err := s.db.CreateFeed(context.Background(), database.CreateFeedParams{
 		ID:        uuid.New(),
@@ -189,15 +197,11 @@ func handlerFeeds(s *state, cmd command) error {
 
 // this command takes a single input, a URL and subscribes the user to the feed. If the URL does not exist
 // a new feed will not be created
-func handlerFollow(s *state, cmd command) error {
+func handlerFollow(s *state, cmd command, currentUser database.User) error {
 	if len(cmd.arguments) != 1 {
 		return fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments))
 	}
 	feed, err := s.db.GetFeedsByURL(context.Background(), cmd.arguments[0])
-	if err != nil {
-		return err
-	}
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
 	if err != nil {
 		return err
 	}
@@ -213,17 +217,44 @@ func handlerFollow(s *state, cmd command) error {
 }
 
 // this command prints a list of all the feeds the user is currently following
-func handlerFollowing(s *state, cmd command) error {
-	currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
-	if err != nil {
-		return nil
-	}
+func handlerFollowing(s *state, cmd command, currentUser database.User) error {
 	feeds, err := s.db.GetFeedsUserFollows(context.Background(), currentUser.ID)
 	if err != nil {
-		return nil
+		return err
 	}
 	for _, feed := range feeds {
 		fmt.Println(feed.FeedName)
 	}
 	return nil
+}
+
+// This command takes a single feed URL and uses it to remove the link in feed_follows for the logged in user
+func handleUnfollow(s *state, cmd command, currentUser database.User) error {
+	if len(cmd.arguments) != 1 {
+		return fmt.Errorf("1 argument expected, %v provided", len(cmd.arguments))
+	}
+	feed, err := s.db.GetFeedsByURL(context.Background(), cmd.arguments[0])
+	if err != nil {
+		return err
+	}
+	err = s.db.DeleteFollowedFeed(context.Background(), database.DeleteFollowedFeedParams{
+		UserID: currentUser.ID,
+		FeedID: feed.ID,
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// This command is to DRY up the code. There were a number of places I was getting the logged in user and this is
+// a good way to make it generic so if needed, it can be updated from a single place
+func middlewareLoggedIn(handler func(s *state, cmd command, user database.User) error) func(*state, command) error {
+	return func(s *state, c command) error {
+		currentUser, err := s.db.GetUser(context.Background(), s.cfg.CurrentUserName)
+		if err != nil {
+			return err
+		}
+		return handler(s, c, currentUser)
+	}
 }

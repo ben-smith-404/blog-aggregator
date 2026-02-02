@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/xml"
+	"fmt"
 	"html"
 	"io"
 	"net/http"
@@ -24,6 +25,7 @@ type RSSItem struct {
 	PubDate     string `xml:"pubDate"`
 }
 
+// fetches a feed from a given URL
 func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 	client := &http.Client{}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, feedURL, nil)
@@ -53,4 +55,18 @@ func fetchFeed(ctx context.Context, feedURL string) (*RSSFeed, error) {
 		feed.Channel.Item[x] = rssItem
 	}
 	return &feed, nil
+}
+
+// the almighty feed scraper. Gets the oldest feed in the db, retrieves the feed info using fetchFeed()
+// and prints the feed titles to the console
+func scrapeFeeds(s *state) {
+	feed, err := s.db.GetNextFeedToFetch(context.Background())
+	checkError(err)
+	err = s.db.MarkFeedFetched(context.Background(), feed.ID)
+	checkError(err)
+	rssFeed, err := fetchFeed(context.Background(), feed.Url)
+	checkError(err)
+	for _, rssItem := range rssFeed.Channel.Item {
+		fmt.Println(rssItem.Title)
+	}
 }
